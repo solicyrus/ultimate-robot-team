@@ -1,0 +1,4 @@
+requests>=2.28
+openai>=1.0
+# google-genai>=0.3  # OPTIONAL — only for Gemini-first lesson learning;
+#                        the OpenAI fallback in brain/llm.py works without it.
