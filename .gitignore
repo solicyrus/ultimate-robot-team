@@ -1,0 +1,12 @@
+# secrets — never commit
+.env
+
+# runtime state — local only
+brain_memory.json
+learning_memory.json
+queue.json
+
+# python noise
+__pycache__/
+*.pyc
+venv/
