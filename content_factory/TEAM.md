@@ -106,3 +106,6 @@ loop, and `main.py` is the original SuperRobot mission orchestrator. The
 Content Factory is a standalone production line feeding the SAME
 `approval_queue.json` — it is not wired into any cron, and no cron was
 edited to add it.
+
+## Production standard — video length (Cyrus, 2026-10-25)
+Future host videos run ~20-30 seconds (not 10s): hook in the first 2 seconds, one or two tips, then the CTA end card. Applies to new productions only.
