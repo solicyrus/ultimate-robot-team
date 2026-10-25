@@ -108,4 +108,4 @@ Content Factory is a standalone production line feeding the SAME
 edited to add it.
 
 ## Production standard — video length (Cyrus, 2026-10-25)
-Standard length is 30 seconds for host/tip videos: hook in the first 2 seconds, a real tip, then the CTA end card. 15 seconds only for pure scenery B-roll with nothing to explain. Applies to new productions only.
+PERMANENT RULE (Cyrus, 2026-10-25): ALL videos on ALL platforms (YouTube included) are 30 seconds — hook in the first 2 seconds, a real tip, then the CTA end card. No exceptions. Applies to new productions.
