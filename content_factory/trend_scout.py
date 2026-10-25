@@ -35,7 +35,7 @@ def find_trends(niche="Vancouver Island and Pacific Northwest travel",
     prompt = (
         f"Find {count} strong short-form video angles for this niche: "
         f"{niche}\n"
-        "Each angle must suit a 10-30 second vertical video presented "
+        "Each angle must suit an exactly-30-second vertical video presented "
         "by the channel's AI host, and must be buildable with the "
         "proven techniques below.\n" + TECHNIQUES + "\n"
         "For each angle give: angle (the content angle in one line), "
