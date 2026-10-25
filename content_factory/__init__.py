@@ -12,7 +12,8 @@ Pipeline (content_super_robot.py):
     title_writer / caption_writer / hashtag_researcher /
     cover_designer / editor / music_picker / adapter /
     engagement_writer / scheduler -> hook_critic + fact_critic ->
-    quality_gatekeeper (only >= 8/10 passes) -> ApprovalQueue
+    quality_gatekeeper (records the hook score as info; only the
+    deterministic fact scan can reject) -> ApprovalQueue
     librarian records every concept (pass or reject) in ledger.jsonl.
 
 IRON RULE (team standard): the factory only PREPARES and queues.
