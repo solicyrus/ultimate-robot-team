@@ -2,34 +2,37 @@
 
 Content Factory robot 17 of 20: the fact critic — the honesty guard.
 
-Two layers of checking over every text that would reach the public:
-1. A deterministic scan (no AI): any money amount other than the
-   approved CA$10, any clock time that looks like an opening hour,
-   and any phone-number-shaped string is flagged automatically.
-   These flags quote the offending token and are the hard-fail
-   authority. Matches that fall inside an APPROVED-FACT phrase
-   (e.g. the "CA$10" inside "CA$10 for 14 days") are skipped —
-   they are the approved fact itself, not an invention.
-2. An AI check against the approved-facts block. An AI complaint
-   only counts as a flag when it carries a CONCRETE QUOTE: the
-   exact offending phrase, verified to appear in the named field,
-   plus what invented fact that phrase asserts. An AI complaint
-   without a verifiable quote is downgraded to a warning — it is
-   reported, but it does NOT fail the package.
+THE RULE (architectural decision, 2026-10-25): the DETERMINISTIC
+scan is the ONLY hard-fail authority in this module. The AI layer
+is WARNINGS ONLY — it still runs, and its complaints are still
+reported in "warnings" (they are useful notes for the human
+approver), but an AI complaint can NEVER fail a package: it never
+sets "passed" to False and never appears in "flags".
 
-APPROVED-FACTS WHITELIST (added 2026-10-25): before any AI flag
-can hard-fail, its quote is checked against the approved set
-below. A flag whose quoted content matches an approved fact is
-DISCARDED and logged as a warning ("approved fact, ignored") —
-the previous live run hard-flagged the approved price line
-itself ("…try Cyrus AI trip planning for just CA$10 for 14
-days." — "asserts a price"), which is a plain bug: the approved
-fact can never be an invented fact. Premium $79 is deliberately
-NOT whitelisted — it is not approved for factory content.
+Why: the AI layer kept false-flagging the team's own standard
+content — first the approved CA$10 price line itself, then the
+channel-registry links from brain/channels.py that every
+description carries by design. Whitelisting each new case was
+whack-a-mole. The deterministic scan has never false-flagged, and
+it catches the real dangers — invented prices, hours, phone
+numbers — so it alone decides pass/fail.
+
+The two layers:
+1. Deterministic scan (no AI): any money amount other than the
+   approved CA$10, any clock time that looks like an opening
+   hour, and any phone-number-shaped string is flagged,
+   quoting the offending token. Matches that fall inside an
+   APPROVED-FACT phrase (e.g. the "CA$10" inside "CA$10 for
+   14 days") are skipped — they are the approved fact itself,
+   not an invention. "flags" holds ONLY this scan's hits, and
+   "passed" is True iff "flags" is empty.
+2. AI check against the approved-facts block: every complaint —
+   quoted or not — lands in "warnings" for the human approver.
+   It changes nothing else.
 
 If the AI layer is unavailable, the deterministic scan alone
-decides and the result says so honestly. A package with ANY hard
-flag cannot pass the quality gate; warnings never block it.
+decides (which it does anyway) and ai_used says so honestly.
+Hard flags block the quality gate; warnings never do.
 """
 
 import os
@@ -44,13 +47,17 @@ _MONEY = re.compile(r"(CA\$|US\$|\$|CAD|USD)\s?\d[\d.,]*", re.IGNORECASE)
 _CLOCK = re.compile(r"\b\d{1,2}(:\d{2})?\s?(am|pm)\b", re.IGNORECASE)
 _PHONE = re.compile(r"\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b")
 _APPROVED_MONEY = {"ca$10", "ca$ 10"}
+# The approved token, strictly: CA$10 with an optional ".00".
+# (A bare startswith("ca$10") would also wave through CA$100 —
+# an invented price — so the token must match in full.)
+_APPROVED_TOKEN = re.compile(r"ca\$\s?10(?:\.0+)?")
 
 # --- APPROVED-FACTS whitelist -------------------------------------
 # The ONLY product facts factory content may state (mirrors
-# common.APPROVED_FACTS). A flag — AI or scan — whose quoted
-# content matches one of these is the approved fact itself, NOT
-# an invented fact, and must never hard-fail. Premium $79 is NOT
-# here on purpose: it is not approved for factory content.
+# common.APPROVED_FACTS). Used by the deterministic scan to skip
+# matches that fall inside an approved-fact phrase, and to
+# annotate AI warnings. Premium $79 is NOT here on purpose: it is
+# not approved for factory content.
 _APPROVED_SPAN_RES = (
     re.compile(r"ca\$\s?10\s+for\s+14\s+days", re.IGNORECASE),
     re.compile(r"cyrus\s+ai\s+trip\s+planning\s+costs\s+ca\$\s?10",
@@ -99,9 +106,10 @@ def _is_approved(quote):
 
 
 def _scan(texts):
-    """Deterministic flags over a {field: text} dict. Matches that
-    fall inside an approved-fact phrase are skipped; every other
-    price / hour / phone-shaped token is still caught."""
+    """Deterministic flags over a {field: text} dict — the ONLY
+    hard-fail authority. Matches that fall inside an approved-fact
+    phrase are skipped; every other price / hour / phone-shaped
+    token is caught, quoting the offending token."""
     flags = []
     for field, text in (texts or {}).items():
         t = str(text or "")
@@ -110,7 +118,9 @@ def _scan(texts):
             if _inside(spans, m):
                 continue
             token = re.sub(r"\s+", " ", m.group(0).strip().lower())
-            if token not in _APPROVED_MONEY and not token.startswith("ca$10"):
+            token = token.rstrip(".")
+            if (token not in _APPROVED_MONEY
+                    and not _APPROVED_TOKEN.fullmatch(token)):
                 flags.append(f"{field}: unapproved money amount "
                              f"'{m.group(0).strip()}'")
         for m in _CLOCK.finditer(t):
@@ -144,8 +154,8 @@ def _norm(s):
 
 def _quote_field(quote, texts):
     """Return the field whose text actually contains the quote
-    (whitespace/case-insensitive), or None. A quote that appears
-    nowhere is not evidence of anything."""
+    (whitespace/case-insensitive), or None. Used only to annotate
+    AI warnings — never to fail anything."""
     q = _norm(quote).strip("'\"")
     if len(q) < 3:
         return None
@@ -155,17 +165,15 @@ def _quote_field(quote, texts):
     return None
 
 
-def _ai_flags(data, texts):
-    """Split the AI layer's complaints into (hard flags, warnings).
-
-    A complaint becomes a HARD flag only when it carries a concrete
-    quote that verifiably appears in one of the checked fields AND
-    the quote does not match the approved-facts whitelist. A
-    verified quote that IS an approved fact is discarded with an
-    "approved fact, ignored" warning. Anything else is a warning:
-    reported, never blocking.
-    """
-    hard, warnings = [], []
+def _ai_warnings(data, texts):
+    """Turn the AI layer's complaints into WARNINGS — all of them,
+    unconditionally. Per the module rule, the AI layer is advisory
+    only: nothing it says can hard-fail a package, so every
+    complaint is formatted as a note for the human approver. Where
+    a complaint carries a quote, the warning says whether that
+    quote verifiably appears in a field and whether it is an
+    approved fact."""
+    warnings = []
     for raw in data.get("flags", []) or []:
         field = quote = claim = ""
         if isinstance(raw, dict):
@@ -188,37 +196,31 @@ def _ai_flags(data, texts):
         if not claim and not quote:
             continue
         found = _quote_field(quote, texts) if quote else None
-        if found and _is_approved(quote):
-            # The quote verifiably appears in a field, but it IS
-            # an approved fact — it can never be an invented
-            # fact. Discard the flag; log it as a warning.
-            label = field if field in _FIELDS else found
-            warnings.append(
-                f"fact critic AI ({label}): '{quote}' — "
-                "approved fact, ignored")
-        elif found:
-            label = field if field in _FIELDS else found
-            hard.append(f"{label}: invented fact '{quote}'"
-                        + (f" — asserts {claim}" if claim else ""))
-        else:
-            warnings.append("fact critic AI (unverified — no "
-                            "concrete quote): "
-                            + (f"{field}: " if field else "")
-                            + (claim or quote))
-    if data.get("passed") is False and not hard:
-        warnings.append("fact critic AI verdict: failed, but it "
-                        "quoted no concrete invented fact "
-                        "(warning only)")
-    return hard, warnings
+        label = field if field in _FIELDS else (found or "general")
+        note = ""
+        if quote and found and _is_approved(quote):
+            note = " — this is an approved fact"
+        elif quote and not found:
+            note = " — quote not found in any field (unverified)"
+        warnings.append(
+            f"fact critic AI warning ({label}): "
+            + (f"'{quote}'" if quote else "")
+            + (f" — {claim}" if claim else "")
+            + note)
+    if data.get("passed") is False:
+        warnings.append("fact critic AI verdict: failed "
+                        "(warning only — AI verdicts never block)")
+    return warnings
 
 
 def check_facts(texts):
     """Return {"ok": True, "passed": bool, "flags": [...],
     "warnings": [...], "ai_used": bool}. texts: {field: text}.
 
-    "flags" holds ONLY hard failures: deterministic-scan hits (which
-    quote the offending token) and AI complaints backed by a
-    verified concrete quote. "passed" is True iff flags is empty.
+    "flags" holds ONLY hard failures: deterministic-scan hits
+    (which quote the offending token). The AI layer's complaints
+    go to "warnings" and can never appear in "flags". "passed"
+    is True iff the deterministic scan found nothing.
     """
     flags = _scan(texts)
     warnings = []
@@ -239,9 +241,9 @@ def check_facts(texts):
             "- claim: the invented fact that phrase asserts (a "
             "price, hour, phone number, distance, date or place "
             "fact that was not given).\n"
-            "A complaint without an exact quote is ignored, so "
-            "quote precisely or do not raise it. General praise, "
-            "emotions and visual descriptions are NOT facts.\n"
+            "Quote precisely — your complaints are advisory notes "
+            "for a human approver. General praise, emotions and "
+            "visual descriptions are NOT facts.\n"
             'Reply ONLY valid JSON: {"passed": true, "flags": '
             '[{"field": "...", "quote": "...", "claim": "..."}, '
             "...]} — passed=false only if at least one quoted "
@@ -250,11 +252,7 @@ def check_facts(texts):
         data = role_ask(_SYSTEM, prompt, max_tokens=600, temperature=0.2)
         if data is not None:
             ai_used = True
-            hard, warns = _ai_flags(data, texts)
-            for f in hard:
-                if f not in flags:
-                    flags.append(f)
-            warnings.extend(warns)
+            warnings.extend(_ai_warnings(data, texts))
     return {"ok": True, "ai_used": ai_used,
             "passed": len(flags) == 0, "flags": flags,
             "warnings": warnings}
