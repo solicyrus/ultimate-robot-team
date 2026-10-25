@@ -30,14 +30,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from content_factory.common import fail, role_ask  # noqa: E402
 
 # --- THE LOCKED CADENCE (2026-10-25) --------------------------------
-PLATFORMS = ["youtube", "instagram", "whatsapp", "telegram"]
+PLATFORMS = ["youtube", "instagram", "facebook", "whatsapp", "telegram"]
 DAILY_PER_PLATFORM = 1
 # Phase 2 (YouTube 2/day) stays OFF until 2-3 weeks of good watch
 # metrics say otherwise. Flip ONLY by a human decision.
 youtube_phase2 = False
 CADENCE_TEXT = (
     "1 strong content piece per day on every platform "
-    "(YouTube Shorts, Instagram Reels, WhatsApp channel, Telegram)"
+    "(YouTube Shorts, Instagram Reels, Facebook Reels, WhatsApp "
+    "channel, Telegram)"
 )
 
 
