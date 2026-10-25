@@ -113,6 +113,36 @@ lb.learn_from_feedback(post_text, "too long and no hashtags", is_positive=False)
 # next mission's captions automatically apply the new rule
 ```
 
+## 🔁 Daily workflow (with YOUR approval — v1)
+
+**Nothing publishes without you.** The loop:
+
+1. **Schedule** — `python main.py` creates posts into `queue.json`
+   (or queue your own text via the scheduler).
+2. **Prepare** — `python -m robots.runner prepare` moves due posts
+   into `approval_queue.json`, generates the AI image (or an honest
+   skip without a key), and writes a full preview.
+   **No publishing happens in this mode.**
+3. **YOU review** — `python approve.py list` shows every post waiting
+   for you, with a caption preview.
+4. **Approve or reject** —
+   `python approve.py <id> approve` → the post becomes publishable;
+   `python approve.py <id> reject "too long, no hashtags"` → rejected
+   AND your note becomes a durable lesson the team applies next time.
+5. **Publish** — `python -m robots.runner publish` sends every
+   *approved* post whose time has come: Telegram first, then
+   Instagram (each a real send or an honest skip). The outcome is
+   recorded for future learning.
+
+Run step 5 on a schedule — every morning at 9, for example:
+
+```cron
+0 9 * * * cd ~/workspace/ultimate-robot-team && python -m robots.runner publish
+```
+
+`python -m robots.runner status` shows the whole picture any time:
+how many posts are waiting for you, approved, published.
+
 ## The things you do yourself
 
 **1. Real Telegram publishing** (5 minutes, free):
@@ -146,6 +176,9 @@ visual step cleanly.
 ## Files
 
 - `main.py` — the SuperRobot orchestrator + demo mission
+- `approve.py` — the human approval gate (list / approve / reject)
+- `robots/runner.py` — the execution loop: prepare / publish / status
+  (`python -m robots.runner ...`), approval_queue.json included
 - `brain/llm.py` — real AI calls (key from env only, never raises)
 - `brain/memory.py` — JSON-file memory
 - `brain/learning.py` — feedback-loop learning (Gemini first, OpenAI fallback)
