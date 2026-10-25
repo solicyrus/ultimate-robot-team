@@ -6,7 +6,13 @@ A REAL post queue stored in queue.json on disk (survives restarts).
   `when` is an ISO datetime string; None means "post as soon as possible".
 - due_posts(now=None) -> queued posts whose time has come.
 - mark_sent(post_id, message_id=None) -> marks a post sent.
+- mark_prepared(post_id) -> marks a post prepared for human review.
 - pending() -> all posts still queued.
+
+Lifecycle with the runner (robots/runner.py):
+  queued -> prepared (runner picked it into approval_queue.json)
+  then inside approval_queue.json:
+  awaiting_approval -> approved / rejected -> published / partial
 
 Never raises on a missing/corrupt queue file — starts empty instead.
 """
@@ -78,6 +84,20 @@ class PostScheduler:
                 p["sent_at"] = datetime.now().isoformat()
                 self._save()
                 return True
+        return False
+
+    def mark_prepared(self, post_id):
+        """Mark a post as prepared (moved into approval_queue.json by
+        the runner). Returns True if found. Never raises."""
+        try:
+            for p in self.posts:
+                if p.get("id") == post_id:
+                    p["status"] = "prepared"
+                    p["prepared_at"] = datetime.now().isoformat()
+                    self._save()
+                    return True
+        except Exception:
+            pass
         return False
 
     def pending(self):
