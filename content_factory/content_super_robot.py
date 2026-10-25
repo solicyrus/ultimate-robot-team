@@ -1,6 +1,6 @@
 """ULTIMATE ROBOT TEAM — content_factory/content_super_robot.py
 
-The Content Factory's SUPER ROBOT: orchestrates all 20 factory
+The Content Factory's SUPER ROBOT: orchestrates all 22 factory
 robots into one production line and enqueues ONE finished package
 per concept — whenever it is fact-clean (see the gate rule below).
 
@@ -25,6 +25,11 @@ Pipeline:
           script — then re-checks. Still dirty -> nothing queued.)
       -> ApprovalQueue (robots/runner.py — the team's shared queue)
       -> librarian records the outcome in ledger.jsonl either way.
+      -> post-steps (best-effort, never publish, never fail the
+         run): thumbnail_maker renders a real thumbnail for every
+         finished video that lacks one, and analytics_robot
+         snapshots the public stats of everything published so
+         far into analytics.jsonl.
 
 IRON RULE: this robot only PREPARES and queues. It never publishes,
 never sends anything anywhere. A human approves in approve.py first.
@@ -47,11 +52,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from brain.channels import channels_text          # noqa: E402
 from brain.learning import LearningBrain          # noqa: E402
 from content_factory import (                     # noqa: E402
-    adapter, caption_writer, cover_designer, editor, engagement_writer,
-    fact_critic, hashtag_researcher, hook_critic, hook_master,
-    idea_generator, librarian, music_picker, quality_gatekeeper,
-    scheduler, scriptwriter, series_planner, storyboarder,
-    title_writer, trend_scout, video_prompt_engineer)
+    adapter, analytics_robot, caption_writer, cover_designer,
+    editor, engagement_writer, fact_critic, hashtag_researcher,
+    hook_critic, hook_master, idea_generator, librarian,
+    music_picker, quality_gatekeeper, scheduler, scriptwriter,
+    series_planner, storyboarder, thumbnail_maker, title_writer,
+    trend_scout, video_prompt_engineer)
 from content_factory.common import (                # noqa: E402
     APPROVED_FACTS, HOST_LABEL, role_ask)
 from robots.runner import AWAITING, ApprovalQueue  # noqa: E402
@@ -502,10 +508,40 @@ def _print_summary_fa(result):
           "تأیید شما، بعد انتشار.")
 
 
+def _post_steps():
+    """Finishing + reporting steps after a build run.
+
+    thumbnail_maker renders a real thumbnail image for every
+    queued entry whose video is finished (edited_file) but which
+    has no thumbnail yet; analytics_robot then snapshots the
+    public stats of everything published so far. Both are
+    best-effort: they never publish anything and never fail the
+    build — a problem is printed, not raised.
+    """
+    try:
+        thumbs = thumbnail_maker.make_missing_thumbnails()
+        if thumbs.get("made"):
+            print(f"🖼️ thumbnail_maker: rendered "
+                  f"{len(thumbs['made'])} thumbnail(s): "
+                  f"{', '.join(thumbs['made'])}")
+        for f in thumbs.get("failed", []):
+            print(f"🖼️ thumbnail_maker: {f['id']} failed: "
+                  f"{f['error']}")
+    except Exception as exc:
+        print(f"🖼️ thumbnail_maker: skipped ({exc})")
+    try:
+        snap = analytics_robot.snapshot()
+        if snap.get("count"):
+            analytics_robot.print_summary(snap)
+    except Exception as exc:
+        print(f"📊 analytics_robot: skipped ({exc})")
+
+
 def main(argv):
     focus = " ".join(argv[1:]).strip() or None
     result = build_package(focus=focus)
     _print_summary_fa(result)
+    _post_steps()
     return 0 if result.get("queued") else 1
 
 
