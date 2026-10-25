@@ -2,7 +2,7 @@
 
 The Content Factory's SUPER ROBOT: orchestrates all 20 factory
 robots into one production line and enqueues ONE finished package
-per concept — only if it passes the quality gate.
+per concept — whenever it is fact-clean (see the gate rule below).
 
 Pipeline:
     librarian (avoid-list + rejection lessons)
@@ -15,16 +15,14 @@ Pipeline:
          cover_designer / editor / music_picker / adapter /
          engagement_writer / scheduler
       -> hook_critic + fact_critic -> quality_gatekeeper
-         (PASS only at >= 8/10 with zero fact flags; on a fail,
-          ONE retry revises whichever fields the gate concretely
-          flagged — hook, title, caption, description, script —
-          using the gate's fix notes, then re-judges. If the final
-          rejection is on hook quality ALONE — facts clean, hook
-          still < 8/10 — ONE extra hook regeneration round runs: a
-          fresh batch of 5 formula candidates steered by the
-          critic's fix notes, best scorer swapped in, re-judged
-          once. That round is separate from the revision cap and
-          happens at most once per run.)
+         (NO critic blocking, Cyrus's rule 2026-10-25: the hook
+          score only ranks candidates and is recorded as
+          information — it never blocks. The ONLY hard gate is
+          fact_critic's deterministic scan: invented prices,
+          hours or phone numbers reject the package; on a fact
+          rejection, ONE retry revises whichever fields the scan
+          concretely flagged — hook, title, caption, description,
+          script — then re-checks. Still dirty -> nothing queued.)
       -> ApprovalQueue (robots/runner.py — the team's shared queue)
       -> librarian records the outcome in ledger.jsonl either way.
 
@@ -88,7 +86,7 @@ _TEXT_FIELDS = ("hook", "title", "caption", "description", "script")
 
 _REVISE_SYSTEM = (
     "You revise ONE field of a travel short-form content package "
-    "after a quality-gate rejection. Remove ONLY the flagged "
+    "after a fact-scan rejection. Remove ONLY the flagged "
     "invented facts and change nothing else — same tone, same "
     "structure, about the same length, same call to action and "
     "links. " + APPROVED_FACTS +
@@ -106,7 +104,7 @@ def _revise_field(field, text, concept, fix_notes):
         return None
     prompt = (
         f"Field: {field}\nConcept: {concept}\n"
-        "The quality gate flagged these CONCRETE problems in this "
+        "The fact scan flagged these CONCRETE problems in this "
         "field — fix exactly these, change nothing else:\n- "
         + "\n- ".join(str(n) for n in fix_notes) + "\n"
         f"Current text:\n{text}\n"
@@ -145,25 +143,21 @@ def _field_notes(field, fact_result, gate):
 
 def _revise_after_gate(gate, fact_result, hook_score, concept,
                        location, fields, script, notes):
-    """ONE revision pass after a gate rejection.
+    """ONE revision pass after a fact-scan rejection.
 
-    Revises whichever text fields were concretely flagged — not
-    only the hook: the hook goes back to the hook master; title,
+    Revises whichever text fields the deterministic fact scan
+    concretely flagged — the hook goes back to the hook master
+    ONLY when the hook itself is flagged (a low hook score alone
+    never triggers a rewrite: scores no longer block); title,
     caption, description and script are rewritten against their
-    own flags. A weak hook score (< gate min) also triggers the
-    hook rewrite. Mutates script in place; returns
+    own flags. Mutates script in place; returns
     (fields, changed) where fields is the updated
     {hook, title, caption, description} dict.
     """
     changed = False
     flagged = _flagged_fields(fact_result)
-    weak_hook = False
-    try:
-        weak_hook = float(hook_score) < quality_gatekeeper.GATE_MIN
-    except (TypeError, ValueError):
-        weak_hook = False
 
-    if "hook" in flagged or weak_hook:
+    if "hook" in flagged:
         retry = hook_master.write_hooks(
             concept, location, fix_notes=gate["fix_notes"])
         if retry.get("ok"):
@@ -217,78 +211,17 @@ def _revise_after_gate(gate, fact_result, hook_score, concept,
 
     if changed:
         notes.append(
-            f"gate rejected attempt 1 ({gate['final_score']}/10) — "
-            "revised field(s): "
-            + ", ".join(f for f in _TEXT_FIELDS
-                        if f in flagged or (f == "hook" and weak_hook)))
+            f"fact scan rejected attempt 1 — revised field(s): "
+            + ", ".join(f for f in _TEXT_FIELDS if f in flagged))
     return fields, changed
-
-
-def _hook_regen_round(gate, concept, location, hook, script, title,
-                      caption, description, notes):
-    """ONE extra hook regeneration round — hook-only rejections.
-
-    Runs only when the gate's final rejection is on hook quality
-    ALONE (facts clean, hook < GATE_MIN). A fresh batch of 5
-    formula candidates is written, steered by the gate's fix
-    notes; the hook critic batch-scores it; the winner replaces
-    the hook (script line 1 kept in sync, exactly as in the
-    revision pass) and the package is re-judged once.
-
-    Returns (hook, hook_scores, fact_result, gate) — with the
-    three verdicts None when regeneration produced no new winner,
-    in which case the caller keeps the pre-regeneration verdict
-    and nothing was mutated.
-    """
-    regen = hook_master.write_hook_candidates(
-        concept, location, fix_notes=gate["fix_notes"])
-    if not regen.get("ok"):
-        notes.append("hook regeneration unavailable: "
-                     f"{regen.get('error')}")
-        return hook, None, None, gate
-    batch = hook_critic.score_hooks_batch(regen["candidates"],
-                                          concept)
-    if not batch.get("ok"):
-        notes.append("hook regeneration unscored: "
-                     f"{batch.get('error')}")
-        return hook, None, None, gate
-    new_hook = batch["best_hook"]
-    if new_hook == hook:
-        notes.append("hook regeneration round: the fresh batch's "
-                     "winner is the current hook — no swap")
-        return hook, None, None, gate
-    new_scores = hook_critic.score_hook(new_hook, concept)
-    if not new_scores.get("ok"):
-        notes.append("hook regeneration re-score unavailable: "
-                     f"{new_scores.get('error')} — keeping the "
-                     "pre-regeneration verdict")
-        return hook, None, None, gate
-    old_hook, hook = hook, new_hook
-    if script.get("lines"):
-        script["lines"][0]["text"] = hook
-    script["spoken_text"] = script.get(
-        "spoken_text", "").replace(old_hook, hook, 1)
-    notes.append(
-        f"hook regeneration round: '{old_hook}' replaced by "
-        f"'{hook}' (batch best {batch['best_score']}/10, formula "
-        f"{batch['ranked'][0]['formula']})")
-    fact_result = fact_critic.check_facts({
-        "hook": hook, "title": title, "caption": caption,
-        "description": description,
-        "script": script.get("spoken_text", ""),
-    })
-    gate = quality_gatekeeper.judge(
-        new_scores["score"], fact_result,
-        hook_fix=new_scores.get("fix", ""))
-    return hook, new_scores, fact_result, gate
 
 
 def build_package(focus=None):
     """Run the full pipeline for ONE concept.
 
     Returns {"ok": True, "queued": True, "id":..., "package": {...},
-    "scores": {...}, "attempts": n} when a package passed the gate
-    and was queued; an honest _fail(...) otherwise (nothing queued).
+    "scores": {...}, "attempts": n} when a package was fact-clean
+    and queued; an honest _fail(...) otherwise (nothing queued).
     """
     notes = []
     try:
@@ -395,7 +328,12 @@ def build_package(focus=None):
         description = (caption + "\n\n" + channels_text() + "\n"
                        + " ".join(hashtags))
 
-    # -- critics + the gate (ONE revision of the flagged fields) -------
+    # -- fact scan (the only hard gate) + hook score (info only) --
+    # The hook critic scores each attempt so the score is recorded
+    # in the package; it never blocks. A gate failure here means
+    # the deterministic fact scan flagged an invented price /
+    # hour / phone: ONE revision of the flagged fields, re-check,
+    # and if it is still dirty the package is honestly rejected.
     attempts = 0
     gate = None
     hook_scores = None
@@ -429,30 +367,15 @@ def build_package(focus=None):
                 platforms["youtube"]["title"] = title
                 platforms["youtube"]["description"] = description
             if not changed:
-                notes.append("gate rejected attempt 1 and no field "
-                             "could be revised — giving up honestly")
+                notes.append("fact scan rejected attempt 1 and no "
+                             "flagged field could be revised — "
+                             "giving up honestly")
                 break
 
-    # -- ONE extra hook regeneration round (hook-only rejections) --
-    # Separate from the 2-attempt revision cap above and used at
-    # most once per run: only when the facts are CLEAN and the
-    # hook alone kept the package under the gate.
+    # Kept in the scores for ledger-schema continuity with older
+    # entries; the regeneration round was removed 2026-10-25 when
+    # hook scores stopped blocking, so it is always False now.
     hook_regen_used = False
-    if (not gate["passed"] and fact_result is not None
-            and fact_result.get("passed")
-            and hook_scores is not None):
-        try:
-            hook_only = (float(hook_scores["score"])
-                         < quality_gatekeeper.GATE_MIN)
-        except (TypeError, ValueError):
-            hook_only = False
-        if hook_only:
-            hook_regen_used = True
-            regen = _hook_regen_round(
-                gate, concept, location, hook, script, title,
-                caption, description, notes)
-            if regen[1] is not None:
-                hook, hook_scores, fact_result, gate = regen
 
     scores = {"hook": hook_scores["score"],
               "final": gate["final_score"],
@@ -464,6 +387,9 @@ def build_package(focus=None):
               "hook_regen_used": hook_regen_used}
 
     if not gate["passed"]:
+        # Reachable ONLY via the fact scan now (scores never
+        # block); the ledger status string is kept for continuity
+        # with the librarian's stats/rejection-lessons machinery.
         librarian.record({
             "status": "rejected_by_gate", "concept": concept,
             "location": location, "title": title, "hook": hook,
@@ -471,9 +397,9 @@ def build_package(focus=None):
             "attempts": attempts,
         })
         return _fail(
-            f"quality gate rejected the package after {attempts} "
-            f"attempt(s): final {gate['final_score']}/10 "
-            f"(needs {quality_gatekeeper.GATE_MIN}/10)",
+            f"fact scan rejected the package after {attempts} "
+            f"attempt(s): "
+            + "; ".join(fact_result.get("flags", [])),
             notes=notes, scores=scores, gate=gate, concept=concept)
 
     # -- queue the finished package ------------------------------------
@@ -499,8 +425,8 @@ def build_package(focus=None):
         f"🏭 Content Factory package — {title}\n"
         f"🪝 Hook (first 2 seconds): \"{hook}\"\n"
         f"Concept: {concept}\n"
-        f"⭐ Quality gate: hook {scores['hook']}/10, final "
-        f"{scores['final']}/10 (min {quality_gatekeeper.GATE_MIN})\n"
+        f"⭐ Hook score (info only, never blocks): "
+        f"{scores['hook']}/10 | fact scan: clean ✅\n"
         f"🎬 Series: {series.get('series_name', '—')} | "
         f"Location: {location}\n"
         f"CTA: {_CTA}"
@@ -567,9 +493,9 @@ def _print_summary_fa(result):
     print("🏭 ربات ارشد کارخانه‌ی محتوا — یک بسته‌ی کامل ساخته شد")
     print(f"🎬 {p['title']}")
     print(f"🪝 قلاب: «{p['hook']}»")
-    print(f"⭐ امتیاز قلاب: {s['hook']}/۱۰ — امتیاز نهایی دروازه‌ی "
-          f"کیفیت: {s['final']}/۱۰ (حداقل {s['gate_min']})")
-    print(f"تلاش‌ها تا قبولی: {result['attempts']}")
+    print(f"⭐ امتیاز قلاب (فقط برای اطلاع — هیچ امتیازی جلوی "
+          f"ثبت را نمی‌گیرد): {s['hook']}/۱۰ | بررسی واقعیت: پاک ✅")
+    print(f"تلاش‌ها تا ثبت: {result['attempts']}")
     print(f"شناسه در صف تأیید: {result['id']}")
     print("بسته در صف تأیید (approval_queue.json) با وضعیت «در "
           "انتظار تأیید» ثبت شد. هیچ‌چیز منتشر نشده است — اول "
