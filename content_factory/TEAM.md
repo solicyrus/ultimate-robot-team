@@ -38,7 +38,7 @@ chooses only the time of day, never the volume.
 | 1 | trend_scout | `trend_scout.py` | Finds trending travel / short-form angles |
 | 2 | idea_generator | `idea_generator.py` | Content concepts starring the AI host |
 | 3 | hook_master | `hook_master.py` | First-2-seconds hooks (the قلاب specialist) |
-| 4 | scriptwriter | `scriptwriter.py` | 10–30s spoken scripts for the host |
+| 4 | scriptwriter | `scriptwriter.py` | 30s spoken scripts for the host |
 | 5 | storyboarder | `storyboarder.py` | Shot-by-shot scene breakdowns |
 | 6 | video_prompt_engineer | `video_prompt_engineer.py` | Ready-to-paste AI video prompts (host-consistent: red curly hair, warm smile, location wardrobe) |
 | 7 | series_planner | `series_planner.py` | Recurring series formats (e.g. "One Minute Victoria") |
