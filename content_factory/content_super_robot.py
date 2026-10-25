@@ -12,8 +12,10 @@ Pipeline:
          cover_designer / editor / music_picker / adapter /
          engagement_writer / scheduler
       -> hook_critic + fact_critic -> quality_gatekeeper
-         (PASS only at >= 8/10 with zero fact flags; on a fail the
-          hook master gets ONE retry with the gate's fix notes)
+         (PASS only at >= 8/10 with zero fact flags; on a fail,
+          ONE retry revises whichever fields the gate concretely
+          flagged — hook, title, caption, description, script —
+          using the gate's fix notes, then re-judges)
       -> ApprovalQueue (robots/runner.py — the team's shared queue)
       -> librarian records the outcome in ledger.jsonl either way.
 
@@ -28,6 +30,7 @@ Needs: OPENAI_API_KEY in the environment (same as every AI robot).
 """
 
 import os
+import re
 import sys
 import uuid
 from datetime import datetime
@@ -42,7 +45,8 @@ from content_factory import (                     # noqa: E402
     idea_generator, librarian, music_picker, quality_gatekeeper,
     scheduler, scriptwriter, series_planner, storyboarder,
     title_writer, trend_scout, video_prompt_engineer)
-from content_factory.common import HOST_LABEL     # noqa: E402
+from content_factory.common import (                # noqa: E402
+    APPROVED_FACTS, HOST_LABEL, role_ask)
 from robots.runner import AWAITING, ApprovalQueue  # noqa: E402
 
 _CTA = ("Plan your trip with Cyrus AI — CA$10 for 14 days at "
@@ -69,6 +73,146 @@ def _opt(result, notes, label):
         return result
     notes.append(f"{label} unavailable: {result.get('error', '?')}")
     return {}
+
+
+_TEXT_FIELDS = ("hook", "title", "caption", "description", "script")
+
+_REVISE_SYSTEM = (
+    "You revise ONE field of a travel short-form content package "
+    "after a quality-gate rejection. Remove ONLY the flagged "
+    "invented facts and change nothing else — same tone, same "
+    "structure, about the same length, same call to action and "
+    "links. " + APPROVED_FACTS +
+    " Reply with ONLY valid JSON, no other text."
+)
+
+
+def _revise_field(field, text, concept, fix_notes):
+    """Rewrite one text field against concrete fix notes.
+
+    Returns the revised text, or None on AI failure (the caller
+    keeps the original and notes it honestly).
+    """
+    if not str(text or "").strip() or not fix_notes:
+        return None
+    prompt = (
+        f"Field: {field}\nConcept: {concept}\n"
+        "The quality gate flagged these CONCRETE problems in this "
+        "field — fix exactly these, change nothing else:\n- "
+        + "\n- ".join(str(n) for n in fix_notes) + "\n"
+        f"Current text:\n{text}\n"
+        'Reply ONLY valid JSON: {"text": "..."}'
+    )
+    data = role_ask(_REVISE_SYSTEM, prompt, max_tokens=900,
+                    temperature=0.5)
+    if data is None:
+        return None
+    new = str(data.get("text", "")).strip()
+    return new or None
+
+
+def _flagged_fields(fact_result):
+    """Fields carrying a CONCRETE hard flag. Fact-critic flags are
+    formatted "field: ..." and always quote the offending text, so
+    the field prefix is trustworthy."""
+    fields = []
+    for f in (fact_result or {}).get("flags", []):
+        head = str(f).split(":", 1)[0].strip().lower()
+        if head in _TEXT_FIELDS and head not in fields:
+            fields.append(head)
+    return fields
+
+
+def _field_notes(field, fact_result, gate):
+    """The fix notes that concern one field: its own concrete fact
+    flags, plus the gate's general removal instruction."""
+    notes = [str(f) for f in (fact_result or {}).get("flags", [])
+             if str(f).split(":", 1)[0].strip().lower() == field]
+    for n in (gate or {}).get("fix_notes", []):
+        if not str(n).startswith("FACT:"):
+            notes.append(str(n))
+    return notes
+
+
+def _revise_after_gate(gate, fact_result, hook_score, concept,
+                       location, fields, script, notes):
+    """ONE revision pass after a gate rejection.
+
+    Revises whichever text fields were concretely flagged — not
+    only the hook: the hook goes back to the hook master; title,
+    caption, description and script are rewritten against their
+    own flags. A weak hook score (< gate min) also triggers the
+    hook rewrite. Mutates script in place; returns
+    (fields, changed) where fields is the updated
+    {hook, title, caption, description} dict.
+    """
+    changed = False
+    flagged = _flagged_fields(fact_result)
+    weak_hook = False
+    try:
+        weak_hook = float(hook_score) < quality_gatekeeper.GATE_MIN
+    except (TypeError, ValueError):
+        weak_hook = False
+
+    if "hook" in flagged or weak_hook:
+        retry = hook_master.write_hooks(
+            concept, location, fix_notes=gate["fix_notes"])
+        if retry.get("ok"):
+            old_hook = fields["hook"]
+            fields["hook"] = retry["best_hook"]
+            # keep the script coherent: line 1 IS the hook
+            if script.get("lines"):
+                script["lines"][0]["text"] = fields["hook"]
+            script["spoken_text"] = script.get(
+                "spoken_text", "").replace(old_hook, fields["hook"], 1)
+            changed = True
+        else:
+            notes.append("hook revision unavailable: "
+                         f"{retry.get('error')}")
+
+    for field in ("title", "caption", "description"):
+        if field not in flagged:
+            continue
+        new = _revise_field(field, fields[field], concept,
+                            _field_notes(field, fact_result, gate))
+        if new:
+            fields[field] = new
+            changed = True
+        else:
+            notes.append(f"{field} revision unavailable — kept "
+                         "the flagged original")
+
+    if "script" in flagged:
+        snotes = _field_notes("script", fact_result, gate)
+        new_spoken = _revise_field("script",
+                                   script.get("spoken_text", ""),
+                                   concept, snotes)
+        if new_spoken:
+            quotes = []
+            for f in (fact_result or {}).get("flags", []):
+                if str(f).split(":", 1)[0].strip().lower() == "script":
+                    quotes += re.findall(r"'([^']{3,})'", str(f))
+            for line in script.get("lines", []):
+                low = line.get("text", "").lower()
+                if any(q.lower() in low for q in quotes):
+                    new_line = _revise_field("script line",
+                                             line["text"], concept,
+                                             snotes)
+                    if new_line:
+                        line["text"] = new_line
+            script["spoken_text"] = new_spoken
+            changed = True
+        else:
+            notes.append("script revision unavailable — kept the "
+                         "flagged original")
+
+    if changed:
+        notes.append(
+            f"gate rejected attempt 1 ({gate['final_score']}/10) — "
+            "revised field(s): "
+            + ", ".join(f for f in _TEXT_FIELDS
+                        if f in flagged or (f == "hook" and weak_hook)))
+    return fields, changed
 
 
 def build_package(focus=None):
@@ -173,7 +317,7 @@ def build_package(focus=None):
         description = (caption + "\n\n" + channels_text() + "\n"
                        + " ".join(hashtags))
 
-    # -- critics + the gate (ONE hook retry with fix notes) ------------
+    # -- critics + the gate (ONE revision of the flagged fields) -------
     attempts = 0
     gate = None
     hook_scores = None
@@ -195,22 +339,20 @@ def build_package(focus=None):
         if gate["passed"]:
             break
         if attempts == 1:
-            retry = hook_master.write_hooks(
-                concept, location, fix_notes=gate["fix_notes"])
-            if retry.get("ok"):
-                old_hook = hook
-                hook = retry["best_hook"]
-                # keep the script coherent: line 1 IS the hook
-                if script.get("lines"):
-                    script["lines"][0]["text"] = hook
-                script["spoken_text"] = script.get(
-                    "spoken_text", "").replace(old_hook, hook, 1)
-                notes.append("gate rejected attempt 1 "
-                             f"({gate['final_score']}/10) — hook "
-                             "rewritten with the fix notes")
-            else:
-                notes.append("hook retry unavailable: "
-                             f"{retry.get('error')}")
+            fields = {"hook": hook, "title": title,
+                      "caption": caption, "description": description}
+            fields, changed = _revise_after_gate(
+                gate, fact_result, hook_scores["score"], concept,
+                location, fields, script, notes)
+            hook, title = fields["hook"], fields["title"]
+            caption, description = (fields["caption"],
+                                    fields["description"])
+            if platforms.get("youtube"):
+                platforms["youtube"]["title"] = title
+                platforms["youtube"]["description"] = description
+            if not changed:
+                notes.append("gate rejected attempt 1 and no field "
+                             "could be revised — giving up honestly")
                 break
 
     scores = {"hook": hook_scores["score"],
@@ -218,6 +360,7 @@ def build_package(focus=None):
               "gate_min": quality_gatekeeper.GATE_MIN,
               "fact_passed": bool(fact_result.get("passed")),
               "fact_flags": fact_result.get("flags", []),
+              "fact_warnings": fact_result.get("warnings", []),
               "hook_reasons": hook_scores.get("reasons", [])}
 
     if not gate["passed"]:
