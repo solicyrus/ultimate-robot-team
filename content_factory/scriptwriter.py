@@ -2,7 +2,7 @@
 
 Content Factory robot 4 of 20: the scriptwriter.
 
-Writes the host's spoken script for a 10-30 second short: the hook
+Writes the host's spoken script for an exactly-30-second short: the hook
 line first (word-for-word the hook master's best hook), then 3-5
 short spoken lines, ending with a soft Cyrus AI call to action and
 a comment-bait question when it fits. Timed lines, easy words — the
@@ -36,15 +36,15 @@ def write_script(concept, hook, location=""):
         f"Concept: {concept}\nLocation: {location}\n"
         f"The hook (first line, word for word): \"{hook}\"\n"
         + HOST_BLOCK + "\n"
-        "Write the host's full spoken script for a 10-30 second "
+        "Write the host's full spoken script for an exactly 30-second "
         "vertical video:\n"
         "- line 1 (0-2s) is the hook, EXACTLY as given.\n"
-        "- then 3-5 short lines that deliver on the hook: one vivid "
+        "- then 4-6 short lines that deliver on the hook: one vivid "
         "detail, one useful honest tip, and the host's reaction.\n"
         "- last line: a soft call to action for Cyrus AI trip "
         "planning (only the approved facts) OR a question that "
         "invites comments.\n"
-        "- total spoken words: 25-70.\n"
+        "- total spoken words: 65-80 — a full 30 seconds of speech.\n"
         'Reply ONLY valid JSON: {"spoken_text": "...", "lines": '
         '[{"t": "0-2s", "text": "..."}], "duration_sec": 20}'
     )
