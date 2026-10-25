@@ -6,6 +6,7 @@ Rewrites ONE finished package into per-platform versions — the same
 content, shaped for each surface:
 - YouTube Shorts: hook-formula title + description with links.
 - Instagram Reels: caption-first version (hashtags at the end).
+- Facebook Reels: caption-first version for the Cyrus Outdoors page.
 - WhatsApp channel: a short broadcast text with the video link line.
 - Telegram: a short post for @Cyrus_team_bot with the links.
 The primary platform for factory shorts is YouTube; the
@@ -42,6 +43,9 @@ def adapt_package(title, caption, hook, hashtags):
         "hashtags}.\n"
         "- instagram: {caption: the caption rewritten for Reels — "
         "hook line first, hashtags grouped at the very end}.\n"
+        "- facebook: {caption: the caption rewritten for Facebook "
+        "Reels on the Cyrus Outdoors page — hook line first, "
+        "hashtags grouped at the very end}.\n"
         "- whatsapp: {text: a SHORT channel broadcast (max ~60 "
         "words) with the hook, one line about the video, and the "
         "website link}.\n"
@@ -49,6 +53,7 @@ def adapt_package(title, caption, hook, hashtags):
         "with the hook, the website and YouTube links}.\n"
         'Reply ONLY valid JSON: {"youtube": {"title": "...", '
         '"description": "..."}, "instagram": {"caption": "..."}, '
+        '"facebook": {"caption": "..."}, '
         '"whatsapp": {"text": "..."}, "telegram": {"text": "..."}}'
     )
     data = role_ask(_SYSTEM, prompt, max_tokens=1100, temperature=0.6)
@@ -65,6 +70,8 @@ def adapt_package(title, caption, hook, hashtags):
         },
         "instagram": {"caption": str(
             (data.get("instagram") or {}).get("caption", "")).strip()},
+        "facebook": {"caption": str(
+            (data.get("facebook") or {}).get("caption", "")).strip()},
         "whatsapp": {"text": str(
             (data.get("whatsapp") or {}).get("text", "")).strip()},
         "telegram": {"text": str(
