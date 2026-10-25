@@ -31,7 +31,7 @@ def pick_music(concept, setting=""):
     voice_note}} or an honest failure dict."""
     prompt = (
         f"Concept: {concept}\nSetting: {setting}\n"
-        "Write the music brief for this 10-30 second Short:\n"
+        "Write the music brief for this 30-second Short:\n"
         "- mood: the feeling the music must carry (2-4 words).\n"
         "- tempo: slow / mid / upbeat + where the energy rises.\n"
         "- sound_suggestion: describe the trending sound to search "
