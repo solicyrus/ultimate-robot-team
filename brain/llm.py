@@ -30,6 +30,16 @@ def _client():
     return OpenAI(api_key=key, timeout=30)
 
 
+# SUPER ROBOT STANDARD (2026-10-23, standing order): every robot thinks step by step
+# before answering. Prepended to ALL system prompts team-wide.
+SUPER_THINK = (
+    "THINK LIKE A SUPER ROBOT: before answering, silently reason step by step — "
+    "(1) what is really being asked? (2) what context do I have? "
+    "(3) what is the most helpful, specific answer? "
+    "Then give ONLY the final answer, never show your reasoning.\n\n"
+)
+
+
 def ask(prompt, system, max_tokens=600, temperature=0.7):
     """Ask the AI for free-form text.
 
@@ -43,7 +53,7 @@ def ask(prompt, system, max_tokens=600, temperature=0.7):
         resp = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": system},
+                {"role": "system", "content": SUPER_THINK + system},
                 {"role": "user", "content": prompt},
             ],
             max_tokens=max_tokens,
