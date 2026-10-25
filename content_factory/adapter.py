@@ -36,7 +36,7 @@ def adapt_package(title, caption, hook, hashtags):
     prompt = (
         f"Title: {title}\nHook: \"{hook}\"\nCaption:\n{caption}\n"
         f"Hashtags: {tags}\n" + channels_block() + "\n"
-        "Adapt this package for 4 platforms:\n"
+        "Adapt this package for 5 platforms:\n"
         "- youtube: {title (keep the given title unless a small "
         "tightening helps), description: 2-3 short sentences + the "
         "call to action + the YouTube and WhatsApp links + the "
