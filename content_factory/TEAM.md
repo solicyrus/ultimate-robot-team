@@ -13,9 +13,13 @@ published — Cyrus approves every piece in `approve.py` first.**
 ## 🔒 Locked posting cadence (Cyrus's decision, 2026-10-25)
 
 - **1 strong content piece per day on EVERY platform** — YouTube Shorts,
-  Instagram Reels, the WhatsApp channel, and Telegram.
-- Quality over volume: every piece must pass the quality gate (≥ 8/10)
-  before it can be queued at all.
+  Instagram Reels, Facebook Reels, the WhatsApp channel, and Telegram.
+  Facebook = **Cyrus Outdoors** (https://www.facebook.com/cyrus.soli,
+  2.9K followers — the team's biggest audience; added 2026-10-25).
+- Strongest hook wins (Cyrus's rule, 2026-10-25): NO critic blocking —
+  hook scores only rank candidates and are recorded as information.
+  The ONLY block is the fact scan: no invented prices, hours or
+  phone numbers, ever. Cyrus's approval tap is the real gate.
 - **YouTube may rise to 2/day only later** — after 2–3 weeks of good watch
   metrics — and only by flipping the `youtube_phase2` flag in
   `content_factory/scheduler.py` (OFF by default; nothing turns it on
@@ -44,11 +48,11 @@ chooses only the time of day, never the volume.
 | 11 | cover_designer | `cover_designer.py` | Cover / first-frame text + frame-choice brief |
 | 12 | editor | `editor.py` | Assembly brief: overlays, hook-text timing, logo, end card |
 | 13 | music_picker | `music_picker.py` | Music / sound mood brief per piece |
-| 14 | adapter | `adapter.py` | Per-platform versions (YouTube Shorts, Instagram Reels, WhatsApp, Telegram) |
+| 14 | adapter | `adapter.py` | Per-platform versions (YouTube Shorts, Instagram Reels, Facebook Reels, WhatsApp, Telegram) |
 | 15 | engagement_writer | `engagement_writer.py` | Pinned comment + reply starters + a question to spark comments |
 | 16 | hook_critic | `hook_critic.py` | Scores hook strength 0–10 with reasons |
 | 17 | fact_critic | `fact_critic.py` | Honesty check — only approved facts; flags any invented price / hour / place fact |
-| 18 | quality_gatekeeper | `quality_gatekeeper.py` | Combines the scores; passes only ≥ 8/10, else sends back with fix notes |
+| 18 | quality_gatekeeper | `quality_gatekeeper.py` | Records the hook score as info; rejects ONLY on deterministic fact-scan flags (invented price/hour/phone) |
 | 19 | scheduler | `scheduler.py` | Best posting slot + the locked cadence (above) |
 | 20 | librarian | `librarian.py` | Tracks produced concepts in `ledger.jsonl` — prevents repeats, records lessons |
 
@@ -70,9 +74,9 @@ librarian (avoid-list + rejection lessons)
     video_prompt_engineer / series_planner / cover_designer / editor /
     music_picker / adapter / engagement_writer / scheduler
   → hook_critic + fact_critic → quality_gatekeeper
-      PASS (≥ 8/10, zero fact flags) → ApprovalQueue (awaiting approval)
-      FAIL → hook_master gets ONE retry with the gate's fix notes
-             → still failing: recorded in the ledger, NOTHING is queued
+      FACT-CLEAN (hook score recorded, any value) → ApprovalQueue (awaiting approval)
+      FACT FLAGS → flagged fields get ONE revision → re-check
+             → still dirty: recorded in the ledger, NOTHING is queued
   → librarian records the outcome in ledger.jsonl either way
 ```
 
