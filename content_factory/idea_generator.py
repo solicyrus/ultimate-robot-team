@@ -51,11 +51,12 @@ def generate_idea(focus=None, trend=None, lessons=None, avoid=None):
                        + "\n- ".join(str(a)[:120] for a in avoid[-12:])
                        + "\n")
     prompt = (
-        "Create ONE short-video concept (10-30 seconds, vertical) for "
+        "Create ONE short-video concept (EXACTLY 30 seconds, vertical) for "
         "the Cyrus AI channel.\n" + steer + HOST_BLOCK + "\n"
         "The concept must star the host: she appears on camera at the "
         "location, speaks to the viewer, and the video ends by "
-        "pointing to Cyrus AI trip planning.\n" + TECHNIQUES + "\n"
+        "pointing to Cyrus AI trip planning. The first 2 seconds "
+        "must hit with an explosive hook.\n" + TECHNIQUES + "\n"
         + avoid_block + lessons_block(lessons) +
         "Give: concept (2-3 sentences: what happens, start to end), "
         "location (the real place), setting (time of day / weather / "
