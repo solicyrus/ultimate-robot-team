@@ -14,6 +14,10 @@ CHANNELS = {
         "handle": "@CyrusAIGuide",
         "url": "https://www.youtube.com/@CyrusAIGuide",
     },
+    "facebook": {
+        "name": "Cyrus Outdoors",
+        "url": "https://www.facebook.com/cyrus.soli",
+    },
     "whatsapp": {
         "name": "Cyrus Team",
         "url": "https://whatsapp.com/channel/0029VbDkc9g6WaKg0owHJE3B",
