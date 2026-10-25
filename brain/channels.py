@@ -27,6 +27,11 @@ CHANNELS = {
         "handle": "@Cyrus_team_bot",
         "url": "https://t.me/Cyrus_team_bot",
     },
+    "telegram_channel": {
+        "name": "Cyrus AI",
+        "handle": "@CyrusAIGuide",
+        "url": "https://t.me/CyrusAIGuide",
+    },
     "website": {
         "name": "Victoria Tour and Adventure",
         "url": "https://victoriatourandadventure.com",
