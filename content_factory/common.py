@@ -41,8 +41,11 @@ APPROVED_FACTS = (
 )
 
 TECHNIQUES = (
-    "Proven short-form techniques available: (1) the HOOK — a "
-    "scroll-stopping first 2 seconds; (2) curiosity gap — open a "
+    "Proven short-form techniques available: (1) the HOOK — an "
+    "EXPLOSIVE, scroll-stopping first 2 seconds; the hook decides "
+    "whether anyone watches, so make it hit hard; every video is "
+    "EXACTLY 30 seconds long — that length is a locked rule; "
+    "(2) curiosity gap — open a "
     "question the video then answers; (3) pattern interrupt — an "
     "unexpected first frame or first line; (4) series / ritual "
     "formats the viewer can follow every day; (5) a comment-bait "
