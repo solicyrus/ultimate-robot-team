@@ -1,6 +1,6 @@
 """ULTIMATE ROBOT TEAM — content_factory package
 
-The 20-robot Content Factory: a dedicated production line inside the
+The 22-robot Content Factory: a dedicated production line inside the
 social-media team whose ONLY job is creating the best possible short
 content starring the Cyrus AI channel's AI host (the red-haired woman
 presenter), built HOOK-first (the قلاب technique) plus the other
@@ -15,6 +15,8 @@ Pipeline (content_super_robot.py):
     quality_gatekeeper (records the hook score as info; only the
     deterministic fact scan can reject) -> ApprovalQueue
     librarian records every concept (pass or reject) in ledger.jsonl.
+    Post-steps: thumbnail_maker renders real thumbnails for
+    finished videos; analytics_robot snapshots published stats.
 
 IRON RULE (team standard): the factory only PREPARES and queues.
 Nothing is ever published — a human approves in approve.py first.
