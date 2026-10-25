@@ -1,4 +1,4 @@
-# 🏭 The Content Factory — 20-Robot Super Team
+# 🏭 The Content Factory — 22-Robot Super Team
 
 A dedicated production line inside the Ultimate Robot Team whose ONLY job is
 creating the best possible short-form content starring the Cyrus AI channel's
@@ -55,10 +55,36 @@ chooses only the time of day, never the volume.
 | 18 | quality_gatekeeper | `quality_gatekeeper.py` | Records the hook score as info; rejects ONLY on deterministic fact-scan flags (invented price/hour/phone) |
 | 19 | scheduler | `scheduler.py` | Best posting slot + the locked cadence (above) |
 | 20 | librarian | `librarian.py` | Tracks produced concepts in `ledger.jsonl` — prevents repeats, records lessons |
+| 21 | thumbnail_maker | `thumbnail_maker.py` | Renders the REAL thumbnail image: best frame out of the finished video (ffmpeg) + hook text in gold-on-navy (PIL) + the circular Cyrus logo → `edited/<id>-thumb.jpg`, recorded as `thumbnail_file` on the queue entry |
+| 22 | analytics_robot | `analytics_robot.py` | Tracks every published entry (queue + ledger): public view/like counts for YouTube (public pages only, unreadable = null, never invented), views/day, snapshots in `analytics.jsonl`, top-performer summary |
 
 Shared helpers live in `common.py` (the host's fixed identity, the
 approved-facts block, the technique list, and the `ask_json` wrapper over
 `brain/llm.py`).
+
+## ✅ The 11 skills — full coverage
+
+The team's public claim is an 11-skill YouTube automation standard.
+Every skill maps to at least one robot:
+
+| # | Skill | Covered by |
+|---|-------|-----------|
+| 1 | Idea research | idea_generator (2) + trend_scout (1) |
+| 2 | Trend scouting | trend_scout (1) |
+| 3 | Script writing | scriptwriter (4) |
+| 4 | Hook engineering | hook_master (3) + hook_critic (16, ranks only — never blocks) |
+| 5 | Storyboarding & video prompting | storyboarder (5) + video_prompt_engineer (6) + series_planner (7) |
+| 6 | Video editing & finishing | editor (12, assembly brief) + the ffmpeg finish pipeline (`edited_file` on the queue entry) |
+| 7 | Titles, descriptions & hashtags | title_writer (8) + caption_writer (9) + hashtag_researcher (10) + adapter (14) |
+| 8 | Thumbnail design | cover_designer (11, the brief) + **thumbnail_maker (21, the rendered image)** |
+| 9 | Scheduling | scheduler (19) — locked 1/day/platform cadence |
+| 10 | Publishing | the runner + publishers (YouTube, Telegram live; approval-gated) + engagement_writer (15) |
+| 11 | Analytics & learning | **analytics_robot (22)** + librarian (20) + fact_critic (17) / quality_gatekeeper (18) honesty loop |
+
+Robots 21 and 22 (added 2026-10-25) closed the last two gaps:
+thumbnail design used to stop at a text brief, and published pieces
+were never measured. Both run offline/public-data only — no new
+API keys.
 
 **Approved facts — the only product facts any robot may state:** Cyrus AI
 trip planning costs **CA$10 for 14 days** at victoriatourandadventure.com,
@@ -78,6 +104,10 @@ librarian (avoid-list + rejection lessons)
       FACT FLAGS → flagged fields get ONE revision → re-check
              → still dirty: recorded in the ledger, NOTHING is queued
   → librarian records the outcome in ledger.jsonl either way
+  → post-steps: thumbnail_maker renders `thumbnail_file` for every
+    finished video (edited_file) that lacks one; analytics_robot
+    appends a public-stats snapshot of all published entries to
+    analytics.jsonl and prints the top performer
 ```
 
 Each queued package carries: concept, hook, script, storyboard, title,
