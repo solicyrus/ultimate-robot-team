@@ -10,11 +10,20 @@ and honest against what the video delivers).
 
 Two judging modes:
 - score_hook: ONE hook — the score that feeds the quality
-  gatekeeper.
+  gatekeeper. This is the SINGLE AUTHORITY for the gate.
 - score_hooks_batch: ALL of the hook master's formula candidates
   in one sitting, returned ranked — judging them side by side is
-  sharper than judging one in isolation, and the orchestrator
-  runs with the best scorer.
+  sharper than judging one in isolation. The batch score is only
+  a RANKING AID for picking which candidate to send to score_hook;
+  it never feeds the gate directly.
+
+MEASUREMENT CONSISTENCY (fixed 2026-10-25): both modes judge
+with the SAME rubric text (the shared _RUBRIC constant below,
+interpolated verbatim into both prompts) at temperature 0. The
+previous setup had two near-duplicate rubric wordings at
+temperature 0.35, and the two judges diverged on the same hook
+(batch 8.0 vs single 7.5). One rubric, zero temperature, one
+authority — no averaging, no max-taking, no gaming.
 """
 
 import os
@@ -31,27 +40,40 @@ _SYSTEM = (
     "not what it tries. Reply with ONLY valid JSON, no other text."
 )
 
+# THE rubric — one shared text for BOTH judging modes (see the
+# module docstring). Do not inline a variant of this anywhere:
+# score_hook and score_hooks_batch must interpolate this exact
+# constant so the two judges measure with the same yardstick.
+_RUBRIC = (
+    "Score 0-10 on scroll-stopping strength. Judge:\n"
+    "- curiosity: does it open a question the viewer must close?\n"
+    "- specificity: concrete words beat vague ones.\n"
+    "- muted test: does it work as on-screen text with no sound?\n"
+    "- honesty: can THIS video truly deliver on it?\n"
+    "- length: 8 words or fewer is full marks; longer loses.\n"
+    "Be strict: 5-7 is a normal working hook. 8+ is rare and "
+    "must be truly sharp. 9-10 is exceptional."
+)
+
+# Both modes sample at temperature 0 — judging is measurement,
+# not creation, and must be as reproducible as the API allows.
+_JUDGE_TEMPERATURE = 0
+
 
 def score_hook(hook, concept):
     """Return {"ok": True, "score": float 0-10, "reasons": [...],
     "fix": "..."} or an honest failure dict."""
     prompt = (
         f"Hook: \"{hook}\"\nThe video it opens: {concept}\n"
-        "Score this hook 0-10 on scroll-stopping strength. Judge:\n"
-        "- curiosity: does it open a question the viewer must close?\n"
-        "- specificity: concrete words beat vague ones.\n"
-        "- muted test: does it work as on-screen text with no sound?\n"
-        "- honesty: can THIS video truly deliver on it?\n"
-        "- length: 8 words or fewer is full marks; longer loses.\n"
-        "Be strict: 5-7 is a normal working hook. 8+ is rare and "
-        "must be truly sharp. 9-10 is exceptional.\n"
+        + _RUBRIC + "\n"
         "Give the score, 2-3 short reasons, and ONE concrete fix "
         "that would raise the score (or \"none\" if it is already "
         "excellent).\n"
         'Reply ONLY valid JSON: {"score": 7.5, "reasons": ["..."], '
         '"fix": "..."}'
     )
-    data = role_ask(_SYSTEM, prompt, max_tokens=500, temperature=0.35)
+    data = role_ask(_SYSTEM, prompt, max_tokens=500,
+                    temperature=_JUDGE_TEMPERATURE)
     if data is None:
         return fail("AI unavailable (OPENAI_API_KEY missing or API error)")
     try:
@@ -95,25 +117,18 @@ def score_hooks_batch(candidates, concept):
         for i, c in enumerate(cands, 1))
     prompt = (
         f"The video they all open: {concept}\n"
-        "Score EACH of these candidate hooks 0-10 on "
-        "scroll-stopping strength, judging them against EACH "
-        "OTHER as well as on their own. Same strictness as "
-        "always:\n"
-        "- curiosity: does it open a question the viewer must "
-        "close?\n"
-        "- specificity: concrete words beat vague ones.\n"
-        "- muted test: does it work as on-screen text?\n"
-        "- honesty: can THIS video truly deliver on it?\n"
-        "- length: 8 words or fewer is full marks; longer loses.\n"
-        "Be strict: 5-7 is a normal working hook. 8+ is rare and "
-        "must be truly sharp. 9-10 is exceptional.\n"
+        "Score EACH of these candidate hooks, judging them "
+        "against EACH OTHER as well as on their own, with this "
+        "rubric:\n"
+        + _RUBRIC + "\n"
         f"Candidates:\n{listing}\n"
         "Reply with one score per candidate, echoing each hook "
         "word for word, plus ONE short reason per hook.\n"
         'Reply ONLY valid JSON: {"scores": [{"hook": "...", '
         '"score": 7.5, "reason": "..."}]}'
     )
-    data = role_ask(_SYSTEM, prompt, max_tokens=800, temperature=0.35)
+    data = role_ask(_SYSTEM, prompt, max_tokens=800,
+                    temperature=_JUDGE_TEMPERATURE)
     if data is None:
         return fail("AI unavailable (OPENAI_API_KEY missing or API error)")
     scored = {}
