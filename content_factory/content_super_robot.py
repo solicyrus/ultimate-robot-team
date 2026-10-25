@@ -6,8 +6,11 @@ per concept — only if it passes the quality gate.
 
 Pipeline:
     librarian (avoid-list + rejection lessons)
-      -> trend_scout -> idea_generator -> hook_master -> scriptwriter
-      -> storyboarder -> title_writer / caption_writer /
+      -> trend_scout -> idea_generator
+      -> hook_master (FIVE formula candidates) -> hook_critic
+         batch-scores them -> the package runs with the winner
+      -> scriptwriter (line 1 IS the winning hook) -> storyboarder
+      -> title_writer / caption_writer /
          hashtag_researcher / video_prompt_engineer / series_planner /
          cover_designer / editor / music_picker / adapter /
          engagement_writer / scheduler
@@ -15,7 +18,13 @@ Pipeline:
          (PASS only at >= 8/10 with zero fact flags; on a fail,
           ONE retry revises whichever fields the gate concretely
           flagged — hook, title, caption, description, script —
-          using the gate's fix notes, then re-judges)
+          using the gate's fix notes, then re-judges. If the final
+          rejection is on hook quality ALONE — facts clean, hook
+          still < 8/10 — ONE extra hook regeneration round runs: a
+          fresh batch of 5 formula candidates steered by the
+          critic's fix notes, best scorer swapped in, re-judged
+          once. That round is separate from the revision cap and
+          happens at most once per run.)
       -> ApprovalQueue (robots/runner.py — the team's shared queue)
       -> librarian records the outcome in ledger.jsonl either way.
 
@@ -215,6 +224,65 @@ def _revise_after_gate(gate, fact_result, hook_score, concept,
     return fields, changed
 
 
+def _hook_regen_round(gate, concept, location, hook, script, title,
+                      caption, description, notes):
+    """ONE extra hook regeneration round — hook-only rejections.
+
+    Runs only when the gate's final rejection is on hook quality
+    ALONE (facts clean, hook < GATE_MIN). A fresh batch of 5
+    formula candidates is written, steered by the gate's fix
+    notes; the hook critic batch-scores it; the winner replaces
+    the hook (script line 1 kept in sync, exactly as in the
+    revision pass) and the package is re-judged once.
+
+    Returns (hook, hook_scores, fact_result, gate) — with the
+    three verdicts None when regeneration produced no new winner,
+    in which case the caller keeps the pre-regeneration verdict
+    and nothing was mutated.
+    """
+    regen = hook_master.write_hook_candidates(
+        concept, location, fix_notes=gate["fix_notes"])
+    if not regen.get("ok"):
+        notes.append("hook regeneration unavailable: "
+                     f"{regen.get('error')}")
+        return hook, None, None, gate
+    batch = hook_critic.score_hooks_batch(regen["candidates"],
+                                          concept)
+    if not batch.get("ok"):
+        notes.append("hook regeneration unscored: "
+                     f"{batch.get('error')}")
+        return hook, None, None, gate
+    new_hook = batch["best_hook"]
+    if new_hook == hook:
+        notes.append("hook regeneration round: the fresh batch's "
+                     "winner is the current hook — no swap")
+        return hook, None, None, gate
+    new_scores = hook_critic.score_hook(new_hook, concept)
+    if not new_scores.get("ok"):
+        notes.append("hook regeneration re-score unavailable: "
+                     f"{new_scores.get('error')} — keeping the "
+                     "pre-regeneration verdict")
+        return hook, None, None, gate
+    old_hook, hook = hook, new_hook
+    if script.get("lines"):
+        script["lines"][0]["text"] = hook
+    script["spoken_text"] = script.get(
+        "spoken_text", "").replace(old_hook, hook, 1)
+    notes.append(
+        f"hook regeneration round: '{old_hook}' replaced by "
+        f"'{hook}' (batch best {batch['best_score']}/10, formula "
+        f"{batch['ranked'][0]['formula']})")
+    fact_result = fact_critic.check_facts({
+        "hook": hook, "title": title, "caption": caption,
+        "description": description,
+        "script": script.get("spoken_text", ""),
+    })
+    gate = quality_gatekeeper.judge(
+        new_scores["score"], fact_result,
+        hook_fix=new_scores.get("fix", ""))
+    return hook, new_scores, fact_result, gate
+
+
 def build_package(focus=None):
     """Run the full pipeline for ONE concept.
 
@@ -246,11 +314,21 @@ def build_package(focus=None):
     idea = got["idea"]
     concept, location = idea["concept"], idea["location"]
 
-    # -- hook + script + storyboard (critical) -------------------------
-    hooks = hook_master.write_hooks(concept, location)
-    if not hooks.get("ok"):
-        return _fail(f"hook_master: {hooks.get('error')}", notes=notes)
-    hook = hooks["best_hook"]
+    # -- hook (5 formula candidates, batch-scored) + script + board --
+    cands = hook_master.write_hook_candidates(concept, location)
+    if not cands.get("ok"):
+        return _fail(f"hook_master: {cands.get('error')}", notes=notes)
+    ranked = hook_critic.score_hooks_batch(cands["candidates"],
+                                           concept)
+    if not ranked.get("ok"):
+        return _fail(f"hook_critic: {ranked.get('error')}",
+                     notes=notes)
+    hook = ranked["best_hook"]
+    hook_candidates = [c["hook"] for c in cands["candidates"]]
+    notes.append(
+        f"hook picked from {len(hook_candidates)} formula "
+        f"candidates — batch best {ranked['best_score']}/10 "
+        f"({ranked['ranked'][0]['formula']})")
     script_r = scriptwriter.write_script(concept, hook, location)
     if not script_r.get("ok"):
         return _fail(f"scriptwriter: {script_r.get('error')}",
@@ -355,13 +433,35 @@ def build_package(focus=None):
                              "could be revised — giving up honestly")
                 break
 
+    # -- ONE extra hook regeneration round (hook-only rejections) --
+    # Separate from the 2-attempt revision cap above and used at
+    # most once per run: only when the facts are CLEAN and the
+    # hook alone kept the package under the gate.
+    hook_regen_used = False
+    if (not gate["passed"] and fact_result is not None
+            and fact_result.get("passed")
+            and hook_scores is not None):
+        try:
+            hook_only = (float(hook_scores["score"])
+                         < quality_gatekeeper.GATE_MIN)
+        except (TypeError, ValueError):
+            hook_only = False
+        if hook_only:
+            hook_regen_used = True
+            regen = _hook_regen_round(
+                gate, concept, location, hook, script, title,
+                caption, description, notes)
+            if regen[1] is not None:
+                hook, hook_scores, fact_result, gate = regen
+
     scores = {"hook": hook_scores["score"],
               "final": gate["final_score"],
               "gate_min": quality_gatekeeper.GATE_MIN,
               "fact_passed": bool(fact_result.get("passed")),
               "fact_flags": fact_result.get("flags", []),
               "fact_warnings": fact_result.get("warnings", []),
-              "hook_reasons": hook_scores.get("reasons", [])}
+              "hook_reasons": hook_scores.get("reasons", []),
+              "hook_regen_used": hook_regen_used}
 
     if not gate["passed"]:
         librarian.record({
@@ -382,7 +482,7 @@ def build_package(focus=None):
         "setting": idea.get("setting", ""),
         "host_moment": idea.get("host_moment", ""),
         "technique": idea.get("technique", ""),
-        "hook": hook, "hook_candidates": hooks["hooks"],
+        "hook": hook, "hook_candidates": hook_candidates,
         "script": script, "storyboard": storyboard,
         "title": title, "alt_titles": alt_titles,
         "caption": caption, "description": description,
