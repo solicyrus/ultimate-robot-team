@@ -62,6 +62,16 @@ Shared helpers live in `common.py` (the host's fixed identity, the
 approved-facts block, the technique list, and the `ask_json` wrapper over
 `brain/llm.py`).
 
+**The finisher is real now:** `video_finisher.py` is the deterministic
+ffmpeg/PIL renderer that executes robot 12's assembly brief — it takes a
+queue entry's RAW clip and produces the finished Short in a single pass
+(exactly 30.000s, 720×1280): footage looped ×3 with crossfaded joins,
+hook text burned in ONCE (0–3s), the circular C+S monogram logo burned in
+for the full duration, and the CTA end card ONCE (last 2.5s). It records
+`edited_file` + `finish_pass: single-pass-30s` on the queue entry.
+Run: `./venv/bin/python -m content_factory.video_finisher <entry-id>`
+(or `--all`).
+
 ## ✅ The 11 skills — full coverage
 
 The team's public claim is an 11-skill YouTube automation standard.
@@ -74,7 +84,7 @@ Every skill maps to at least one robot:
 | 3 | Script writing | scriptwriter (4) |
 | 4 | Hook engineering | hook_master (3) + hook_critic (16, ranks only — never blocks) |
 | 5 | Storyboarding & video prompting | storyboarder (5) + video_prompt_engineer (6) + series_planner (7) |
-| 6 | Video editing & finishing | editor (12, assembly brief) + the ffmpeg finish pipeline (`edited_file` on the queue entry) |
+| 6 | Video editing & finishing | editor (12, assembly brief) + **video_finisher.py** (the deterministic single-pass ffmpeg renderer → `edited_file` on the queue entry) |
 | 7 | Titles, descriptions & hashtags | title_writer (8) + caption_writer (9) + hashtag_researcher (10) + adapter (14) |
 | 8 | Thumbnail design | cover_designer (11, the brief) + **thumbnail_maker (21, the rendered image)** |
 | 9 | Scheduling | scheduler (19) — locked 1/day/platform cadence |
