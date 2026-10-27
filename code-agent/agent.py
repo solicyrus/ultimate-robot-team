@@ -3,7 +3,7 @@ import json
 import time
 from github import Github
 from openai import OpenAI
-from tools import get_tools_schema, execute_tool
+from tools import get_tools_schema, execute_tool, git_diff
 from memory import load_memory, save_memory
 
 MAX_STEPS = 25
@@ -105,12 +105,43 @@ def main():
         )
         messages.append(final_response.choices[0].message)
 
+    # Reflection pass: before saving state and reporting, the agent reviews its
+    # own work once, like a strict senior reviewer. Any failure here must never
+    # crash the run — fall back to the plain report.
+    final_state = messages[-1].content if messages[-1].content else "Task completed, but no final text was generated."
+    report_content = final_state
+    try:
+        print("--- Reflection pass ---")
+        try:
+            diff_text = git_diff()
+        except Exception as e:
+            diff_text = f"(git_diff unavailable: {e})"
+        reflection = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are the same agent, now reviewing your own work like a strict senior reviewer."},
+                {"role": "user", "content": (
+                    f"Original task: {task}\n\n"
+                    f"Your final state / report:\n{final_state}\n\n"
+                    f"Actual working-tree changes (git_diff):\n{diff_text}\n\n"
+                    "List: (1) what was actually accomplished vs the task, "
+                    "(2) anything unverified or risky, "
+                    "(3) what the manager should check first."
+                )}
+            ],
+            temperature=0.2
+        )
+        reflection_text = reflection.choices[0].message.content
+        if reflection_text:
+            report_content = f"{final_state}\n\n### 🔍 Self-Review\n\n{reflection_text}"
+    except Exception as e:
+        print(f"Reflection pass failed, reporting without it: {e}")
+
     # Save final state for next run
     save_memory({"last_task": task, "status": "completed", "steps_taken": step + 1})
 
-    # Generate and post report
-    report_content = messages[-1].content if messages[-1].content else "Task completed, but no final text was generated."
-    
+    # Post report
+
     gh = Github(gh_token)
     repo = gh.get_repo(repo_name)
     
