@@ -41,6 +41,38 @@ def run_tests(test_path="."):
     """Runs pytest on the specified path."""
     return run_shell(f"pytest {test_path}")
 
+def git_diff():
+    """Shows what has changed in the working tree (unstaged + untracked summary).
+
+    Runs git directly with argument lists (no shell), so there is no shell
+    parsing or operator injection surface at all.
+    """
+    try:
+        diff = subprocess.run(
+            ["git", "diff", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        status = subprocess.run(
+            ["git", "status", "--short"],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        combined = f"--- git status --short ---\n{status.stdout}\n--- git diff HEAD ---\n{diff.stdout}"
+        if diff.stderr:
+            combined += f"\nSTDERR (diff):\n{diff.stderr}"
+        if status.stderr:
+            combined += f"\nSTDERR (status):\n{status.stderr}"
+        if len(combined) > 6000:
+            combined = combined[:6000] + "\n... [truncated at 6000 chars]"
+        return combined
+    except subprocess.TimeoutExpired:
+        return "Error: git command timed out after 30 seconds."
+    except Exception as e:
+        return f"Error running git diff/status: {str(e)}"
+
 def run_shell(command):
     """Executes a shell command against a strict allowlist."""
     # Manager's security patch (Cyrus, 2026-10-26): a prefix allowlist alone is not
@@ -130,6 +162,17 @@ def get_tools_schema():
         {
             "type": "function",
             "function": {
+                "name": "git_diff",
+                "description": "Show the current working-tree changes (git status --short plus git diff HEAD), truncated to about 6000 chars. Use it to check your own work before finishing.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "run_shell",
                 "description": "Run a shell command. Allowed: python, pytest, pip list, ls, cat.",
                 "parameters": {
@@ -148,6 +191,7 @@ def execute_tool(name, kwargs):
         "write_file": write_file,
         "search_code": search_code,
         "run_tests": run_tests,
+        "git_diff": git_diff,
         "run_shell": run_shell
     }
     if name in tools:
