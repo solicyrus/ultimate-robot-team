@@ -1,0 +1,3 @@
+openai>=1.12.0
+PyGithub>=2.1.1
+pytest>=8.0.0
