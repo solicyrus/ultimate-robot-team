@@ -1,0 +1,69 @@
+name: AI Coding Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task for the AI agent'
+        required: true
+        type: string
+  issue_comment:
+    types: [created]
+
+jobs:
+  run-agent:
+    # Only run if triggered manually OR if an issue comment starts with /agent
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.comment.body, '/agent')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    defaults:
+      run:
+        working-directory: code-agent
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AI Agent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENT_API_KEY: ${{ secrets.AGENT_API_KEY }}
+          AGENT_MODEL: "gpt-4o"
+        run: python agent.py
+
+      # Manager's fix (Cyrus, 2026-10-26): the original workflow committed ONLY
+      # memory/state.json, so the agent's code changes were lost when the runner
+      # shut down — and anything it did save went straight onto the default branch.
+      # Now ALL changes are committed to a dedicated branch and opened as a Pull
+      # Request, so the manager reviews the agent's work before it lands on main.
+      - name: Save agent work to a branch and open a PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git config user.name "AI Agent"
+          git config user.email "agent@bot.github.com"
+          BRANCH="code-agent/run-${{ github.run_id }}"
+          git checkout -b "$BRANCH"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to save."
+            exit 0
+          fi
+          git commit -m "Code Agent run ${{ github.run_id }}"
+          git push origin "$BRANCH"
+          gh pr create --title "Code Agent: run ${{ github.run_id }}" \
+            --body "Automated work by the Code Agent. Manager: review before merging." \
+            --head "$BRANCH" --base main || echo "PR creation skipped (maybe one already exists)."
